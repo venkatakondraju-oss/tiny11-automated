@@ -6,6 +6,10 @@
 [![SourceForge Downloads](https://img.shields.io/sourceforge/dt/tiny-11-releases.svg)](https://sourceforge.net/projects/tiny-11-releases/files/latest/download)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?logo=GitHub-Sponsors)](https://github.com/sponsors/kelexine)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/kelexine)
+
+
 [![Code of Conduct](https://img.shields.io/badge/code%20of%20conduct-contributor%20covenant-purple.svg)](CODE_OF_CONDUCT.md)
 
 **Automated tools for creating streamlined Windows 11 images with CI/CD support.**
