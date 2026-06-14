@@ -40,6 +40,11 @@ on:
         type: boolean
         required: false
         default: false
+      preserve_winre:
+        description: 'Preserve winre.wim (required for real hardware / 24H2+ installs to avoid 0x8007000B)'
+        type: boolean
+        required: false
+        default: false
 
 env:
   ARIA2C_CONNECTIONS: '16'
@@ -317,16 +322,20 @@ jobs:
           $enableDotNet = [System.Boolean]::Parse("${{ github.event.inputs.enable_dotnet35 }}")
           Write-Output ".NET 3.5: $enableDotNet"
 
+          $preserveWinRE = [System.Boolean]::Parse("${{ github.event.inputs.preserve_winre }}")
+          Write-Output "Preserve WinRE: $preserveWinRE"
+
           Write-Output "=== Starting Tiny11 Core Builder ==="
           Write-Output "ISO Drive: $($params.ISO)"
           Write-Output "Image Index: $($params.INDEX)"
           Write-Output ".NET 3.5: $enableDotNet"
+          Write-Output "Preserve WinRE: $preserveWinRE"
           Write-Output "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
           Write-Output "WARNING: This is a CORE build with aggressive optimization!"
 
           $startTime = Get-Date
 
-          .\scripts\tiny11coremaker-headless.ps1 @params -ENABLE_DOTNET35:$enableDotNet
+          .\scripts\tiny11coremaker-headless.ps1 @params -ENABLE_DOTNET35:$enableDotNet -PreserveWinRE:$preserveWinRE
 
           $buildTime = (Get-Date) - $startTime
           Write-Output "Core build completed in $($buildTime.TotalMinutes.ToString('F2')) minutes"
@@ -679,6 +688,7 @@ jobs:
             | **Index** | ${{ github.event.inputs.image_index }} |
             | **Language** | ${{ github.event.inputs.language }} |
             | **.NET 3.5** | ${{ github.event.inputs.enable_dotnet35 }} |
+            | **WinRE** | ${{ github.event.inputs.preserve_winre == 'true' && 'Preserved' || 'Removed (stub)' }} |
 
             ### 🔒 Checksums
 
@@ -749,6 +759,7 @@ jobs:
           - **Version:** ${{ github.event.inputs.windows_version }}
           - **Type:** Core (Minimal)
           - **.NET 3.5:** ${{ github.event.inputs.enable_dotnet35 }}
+          - **WinRE:** ${{ github.event.inputs.preserve_winre == 'true' && 'Preserved' || 'Removed (stub)' }}
 
           ## 📥 Download
           ${{ secrets.SF_SSH_KEY != '' && format('🔗 **SourceForge:** [{0}]({1})', env.ISO_NAME, env.SF_DOWNLOAD_URL) || '🔗 **GitHub Artifacts:** Available in workflow run' }}

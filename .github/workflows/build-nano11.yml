@@ -35,6 +35,11 @@ on:
         required: false
         default: false
         type: boolean
+      preserve_winre:
+        description: 'Preserve winre.wim (required for real hardware / 24H2+ installs to avoid 0x8007000B)'
+        type: boolean
+        required: false
+        default: false
 
 env:
   ARIA2C_CONNECTIONS: '16'
@@ -307,9 +312,12 @@ jobs:
           Write-Output "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
           Write-Output "!!! EXTREME NANO BUILD - VM TESTING ONLY!"
 
+          $preserveWinRE = [System.Boolean]::Parse("${{ github.event.inputs.preserve_winre }}")
+          Write-Output "Preserve WinRE: $preserveWinRE"
+
           $startTime = Get-Date
 
-          .\scripts\nano11builder-headless.ps1 @params
+          .\scripts\nano11builder-headless.ps1 @params -PreserveWinRE:$preserveWinRE
 
           $buildTime = (Get-Date) - $startTime
           Write-Output "Nano build completed in $($buildTime.TotalMinutes.ToString('F2')) minutes"
@@ -590,6 +598,7 @@ jobs:
             | **Base** | Windows 11 ${{ github.event.inputs.windows_version }} |
             | **Index** | ${{ github.event.inputs.image_index }} |
             | **Language** | ${{ github.event.inputs.language }} |
+            | **WinRE** | ${{ github.event.inputs.preserve_winre == 'true' && 'Preserved' || 'Removed (stub)' }} |
 
             ### 🔒 Checksums
 
@@ -651,6 +660,7 @@ jobs:
           - **Release:** ${{ env.RELEASE_TAG }}
           - **Version:** ${{ github.event.inputs.windows_version }}
           - **Type:** Nano (EXTREME Minimal)
+          - **WinRE:** ${{ github.event.inputs.preserve_winre == 'true' && 'Preserved' || 'Removed (stub)' }}
 
           ## 📥 Download
           ${{ secrets.SF_SSH_KEY != '' && format('🔗 **SourceForge:** [{0}]({1})', env.ISO_NAME, env.SF_DOWNLOAD_URL) || '🔗 **GitHub Artifacts:** Available in workflow run' }}
