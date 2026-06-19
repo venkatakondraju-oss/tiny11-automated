@@ -651,6 +651,95 @@ function Remove-NonEssentialServices {
     Write-Log "Non-essential services disabled"
 }
 
+function Apply-PerformanceTweaks {
+    # Author: kelexine (https://github.com/kelexine)
+    # Bakes performance optimizations into the offline image via registry.
+    # Covers: Memory, CPU/Scheduler, Storage (NTFS), Network (TCP), Gaming, Boot time.
+    # Profile: Conservative — safe for desktop and dev workstation use.
+    Write-Log "Applying performance optimizations (desktop/dev profile)..."
+
+    # ── Memory Management ──────────────────────────────────────────────────
+    # Keep default paging for kernel drivers — safe for variable-RAM desktop systems
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\Session Manager\Memory Management' 'DisablePagingExecutive'  'REG_DWORD' '0'
+    # Workstation memory model (0 = workstation, not server)
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\Session Manager\Memory Management' 'LargeSystemCache'        'REG_DWORD' '0'
+    # Skip zeroing page file on shutdown — saves 30-60 s per reboot cycle
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\Session Manager\Memory Management' 'ClearPageFileAtShutdown' 'REG_DWORD' '0'
+    # SysMain is disabled — match prefetcher state to prevent orphaned background I/O
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\Session Manager\Memory Management\PrefetchParameters' 'EnablePrefetcher' 'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\Session Manager\Memory Management\PrefetchParameters' 'EnableSuperfetch' 'REG_DWORD' '0'
+
+    # ── CPU / Thread Scheduler ─────────────────────────────────────────────
+    # 38 (0x26): foreground boost ON + variable short quanta — gaming and desktop sweet spot
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\PriorityControl' 'Win32PrioritySeparation' 'REG_DWORD' '38'
+
+    # ── MMCSS (Multimedia Class Scheduler) ────────────────────────────────
+    # Disable network throttling during multimedia/game workloads
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' 'NetworkThrottlingIndex' 'REG_DWORD' '0xffffffff'
+    # 20 = default; reserves 20% CPU headroom for background tasks (safe for desktop)
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile' 'SystemResponsiveness'   'REG_DWORD' '20'
+    # MMCSS Games class — moderate GPU/CPU priority balanced for gaming alongside other workloads
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games' 'GPU Priority'        'REG_DWORD' '2'
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games' 'Priority'            'REG_DWORD' '6'
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games' 'Scheduling Category' 'REG_SZ'    'Medium'
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games' 'SFIO Priority'       'REG_SZ'    'High'
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games' 'Latency Sensitive'   'REG_SZ'    'True'
+
+    # ── Storage / NTFS ────────────────────────────────────────────────────
+    # Disable 8.3 short filename generation — pure legacy overhead on modern systems
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\FileSystem' 'NtfsDisable8dot3NameCreation' 'REG_DWORD' '1'
+    # Disable last-access timestamp update on every file read — eliminates per-read metadata writes
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\FileSystem' 'NtfsDisableLastAccessUpdate'  'REG_DWORD' '1'
+    # Allow NTFS more memory for its internal metadata cache
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\FileSystem' 'NtfsMemoryUsage'              'REG_DWORD' '2'
+    # Ensure SSD TRIM delete notifications are not suppressed
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\FileSystem' 'DisableDeleteNotification'    'REG_DWORD' '0'
+
+    # ── Network / TCP ─────────────────────────────────────────────────────
+    # Shrink TIME_WAIT from 240 s → 30 s (recycles ports faster after connection close)
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Services\Tcpip\Parameters' 'TcpTimedWaitDelay' 'REG_DWORD' '30'
+    # Expand ephemeral port range to near-maximum
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Services\Tcpip\Parameters' 'MaxUserPort'       'REG_DWORD' '65534'
+    # RFC 1323: TCP window scaling + timestamps (better throughput on high-bandwidth links)
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Services\Tcpip\Parameters' 'Tcp1323Opts'       'REG_DWORD' '1'
+    # TTL 64 (Linux/BSD default): consistent cross-platform behaviour
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Services\Tcpip\Parameters' 'DefaultTTL'        'REG_DWORD' '64'
+    # Disable WSD (Web Services on Devices) network probe overhead
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Services\Tcpip\Parameters' 'EnableWsd'         'REG_DWORD' '0'
+    # Per-interface Nagle + delayed-ACK disable — deferred to first boot (adapter GUIDs unknown offline)
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' 'PerfTuneNagle' 'REG_SZ' `
+        'powershell -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Get-ChildItem HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces | ForEach-Object { Set-ItemProperty $_.PSPath TCPNoDelay 1 -Type DWord -ErrorAction SilentlyContinue; Set-ItemProperty $_.PSPath TcpAckFrequency 1 -Type DWord -ErrorAction SilentlyContinue; Set-ItemProperty $_.PSPath TCPDelAckTicks 0 -Type DWord -ErrorAction SilentlyContinue }"'
+
+    # ── Gaming ────────────────────────────────────────────────────────────
+    # Hardware Accelerated GPU Scheduling (HAGS) — reduces CPU↔GPU submission latency
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\GraphicsDrivers' 'HwSchMode'   'REG_DWORD' '2'
+    # Raise GPU TDR timeout: default 2 s causes false "GPU hung" errors under sustained load
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\GraphicsDrivers' 'TdrDelay'    'REG_DWORD' '10'
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\GraphicsDrivers' 'TdrDdiDelay' 'REG_DWORD' '10'
+    # Disable Xbox Game DVR / Game Bar capture overlay
+    Set-RegistryValue 'HKLM\zNTUSER\SYSTEM\GameConfigStore' 'GameDVR_Enabled'                        'REG_DWORD' '0'
+    Set-RegistryValue 'HKLM\zNTUSER\SYSTEM\GameConfigStore' 'GameDVR_FSEBehaviorMode'                'REG_DWORD' '2'
+    Set-RegistryValue 'HKLM\zNTUSER\SYSTEM\GameConfigStore' 'GameDVR_HonorUserFSEBehaviorMode'       'REG_DWORD' '1'
+    Set-RegistryValue 'HKLM\zNTUSER\SYSTEM\GameConfigStore' 'GameDVR_DXGIHonorFSEWindowsCompatible'  'REG_DWORD' '1'
+    Set-RegistryValue 'HKLM\zNTUSER\SYSTEM\GameConfigStore' 'GameDVR_EFSEBehaviorMode'               'REG_DWORD' '0'
+    # Enable Game Mode — Windows auto-prioritizes detected game processes
+    Set-RegistryValue 'HKLM\zNTUSER\SOFTWARE\Microsoft\GameBar' 'AllowAutoGameMode'   'REG_DWORD' '1'
+    Set-RegistryValue 'HKLM\zNTUSER\SOFTWARE\Microsoft\GameBar' 'AutoGameModeEnabled' 'REG_DWORD' '1'
+
+    # ── Boot Time ─────────────────────────────────────────────────────────
+    # Remove Explorer shell extension load stagger (default 5 s; now immediate)
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Serialize' 'StartupDelayInMSec' 'REG_DWORD' '0'
+    # Remove chkdsk countdown at boot — runs immediately if volume is flagged, skips otherwise
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\Session Manager' 'AutoChkTimeOut' 'REG_DWORD' '0'
+    # Fast Startup (HiberBoot) ON — kernel hibernation gives faster cold boots on desktop
+    Set-RegistryValue 'HKLM\zSYSTEM\ControlSet001\Control\Session Manager\Power' 'HiberbootEnabled' 'REG_DWORD' '1'
+    # BCD tweaks — cannot modify BCD store offline; deferred to first boot via RunOnce
+    Set-RegistryValue 'HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' 'PerfTuneBCD' 'REG_SZ' `
+        'powershell -WindowStyle Hidden -ExecutionPolicy Bypass -Command "& bcdedit /set timeout 10 2>&1 | Out-Null"'
+
+    Write-Log "Performance optimizations applied (desktop/dev profile)"
+}
+
 function Unload-RegistryHives {
     Write-Log "Unloading registry hives..."
     
@@ -827,6 +916,7 @@ try {
     Remove-BloatwareApps
     Remove-EdgeAndOneDrive
     Apply-RegistryTweaks
+    Apply-PerformanceTweaks
     Remove-ScheduledTasks
     Remove-NonEssentialServices
     Unload-RegistryHives
